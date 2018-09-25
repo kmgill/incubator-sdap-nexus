@@ -12,3 +12,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+
+
+from sdap.analysis.NexusHandler import nexus_initializer
+
+
+@nexus_initializer
+class TestInitializer:
+
+    def __init__(self):
+        pass
+
+    def init(self, config):
+        print "*** TEST INITIALIZATION ***"

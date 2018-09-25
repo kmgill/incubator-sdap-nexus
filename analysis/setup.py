@@ -28,9 +28,9 @@ setuptools.setup(
     description="NEXUS API.",
     long_description=open('README.md').read(),
 
-    packages=['sdap', 'sdap.algorithms', 'sdap.algorithms.doms', 'sdap.algorithms_spark'],
-    package_data={'sdap': ['config/web.ini', 'config/algorithms.ini'],
-                  'sdap.algorithms.doms': ['domsconfig.ini']},
+    packages=['sdap', 'sdap.analysis', 'sdap.analysis.algorithms', 'sdap.analysis.algorithms.doms', 'sdap.analysis.algorithms_spark'],
+    package_data={'sdap.analysis': ['config/web.ini', 'config/algorithms.ini'],
+                  'sdap.analysis.algorithms.doms': ['domsconfig.ini']},
     data_files=[
         ('static', ['static/index.html'])
     ],

@@ -12,3 +12,30 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
+
+import time
+
+from sdap.analysis.NexusHandler import CalcHandler
+from sdap.analysis.NexusHandler import nexus_handler
+
+
+@nexus_handler
+class DelayHandlerImpl(CalcHandler):
+    name = "Delay"
+    path = "/delay"
+    description = "Waits a little while"
+    params = {}
+    singleton = True
+
+    def __init__(self):
+        CalcHandler.__init__(self)
+
+    def calc(self, computeOptions, **args):
+        time.sleep(10)
+
+        class SimpleResult(object):
+            def toJson(self):
+                return ""
+
+        return SimpleResult()
