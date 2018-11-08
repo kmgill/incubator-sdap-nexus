@@ -200,4 +200,3 @@ if __name__ == "__main__":
 
     #reproject_rgba_map(data)
 
-

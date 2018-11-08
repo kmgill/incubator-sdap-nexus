@@ -19,3 +19,5 @@ import ColorTableHandler
 import LayerListHandler
 import ThumbnailHandler
 import MrfTileServiceHandler
+import MapFetchHandlerSpark
+import WmtsTileServiceHandlerSpark

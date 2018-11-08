@@ -25,7 +25,8 @@ from scipy.misc import imresize
 from PIL import Image
 from PIL import ImageFont
 from PIL import ImageDraw
-import multiprocessing
+
+from nexustiles.nexustiles import NexusTileService
 
 import colortables
 import colorization
@@ -56,6 +57,7 @@ def get_first_valid_pair(coord_array):
             return coord_array[i], coord_array[i+1]
 
     raise Exception("No valid coordinate pair found!")
+
 
 def get_xy_resolution(tile):
     """
@@ -257,7 +259,17 @@ def expand_map_to_requested_tllr(data, reqd_tllr, data_tllr, x_res, y_res):
     return expanded_data
 
 
-def process_tiles_to_map(nexus_tiles, stats, reqd_tllr, width=None, height=None, force_min=None, force_max=None, table=colortables.get_color_table("grayscale"), interpolation="nearest", background=(0, 0, 0, 0)):
+def determine_parllelism(num_tiles):
+    """
+    Try to stay at a maximum of 1500 tiles per partition; But don't go over 128 partitions.
+    Also, don't go below the default of 8
+    """
+    num_partitions = max(min(num_tiles // 1500, 128), 8)
+    return num_partitions
+
+
+def process_tiles_to_map(nexus_tiles, sc, stats, reqd_tllr, width=None, height=None, force_min=None, force_max=None,
+                         table=colortables.get_color_table("grayscale"), interpolation="nearest", background=(0, 0, 0, 0)):
     """
     Processes a list of tiles into a colorized image map.
     :param nexus_tiles: A list of nexus tiles
@@ -282,20 +294,20 @@ def process_tiles_to_map(nexus_tiles, stats, reqd_tllr, width=None, height=None,
     canvas_height, canvas_width = compute_canvas_size(tiles_tllr, x_res, y_res)
 
     data = np.zeros((canvas_height, canvas_width, 4))
-    data[:,:,:] = background
-
-    pool = multiprocessing.Pool(multiprocessing.cpu_count())
-    proc_results = None
+    data[:, :, :] = background
 
     try:
-        n = int(math.ceil(len(nexus_tiles) / float(multiprocessing.cpu_count())))
-        tile_chunks = np.array_split(np.array(nexus_tiles), n)
-        params = [(tiles, tiles_tllr, data_min, data_max, table, canvas_height, canvas_width, background) for tiles in tile_chunks]
-        proc_results = pool.map(process_tiles_async, params)
+        spark_nparts_needed = determine_parllelism(len(nexus_tiles))
+
+        nexus_tiles_spark = [(tiles, tiles_tllr, data_min, data_max, table, canvas_height, canvas_width, background)
+                             for tiles
+                             in np.array_split(np.array(nexus_tiles),
+                                               spark_nparts_needed)]
+
+        rdd = sc.parallelize(nexus_tiles_spark, spark_nparts_needed)
+        proc_results = rdd.map(process_tiles_async).collect()
     except:
         raise
-    finally:
-        pool.terminate()
 
     for results in proc_results:
         for result in results:
@@ -308,7 +320,6 @@ def process_tiles_to_map(nexus_tiles, stats, reqd_tllr, width=None, height=None,
 
     data = trim_map_to_requested_tllr(data, reqd_tllr, tiles_tllr)
     data = expand_map_to_requested_tllr(data, reqd_tllr, tiles_tllr, x_res, y_res)
-
     if width is not None and height is not None:
         data = imresize(data, (height, width), interp=interpolation)
 
@@ -378,10 +389,14 @@ def fetch_nexus_tiles(tile_service, min_lat, max_lat, min_lon, max_lon, ds, data
     else:
         None
 
-def create_map(tile_service, tllr, ds, dataTimeStart, dataTimeEnd, width=None, height=None, force_min=None, force_max=None, table=colortables.get_color_table("grayscale"), interpolation="nearest", background=(0, 0, 0, 0)):
+
+def create_map(tile_service, sc, tllr, ds, dataTimeStart, dataTimeEnd, width=None, height=None, force_min=None,
+               force_max=None, table=colortables.get_color_table("grayscale"), interpolation="nearest",
+               background=(0, 0, 0, 0)):
     """
     Creates a colorized data map given a dataset, tllr boundaries, timeframe, etc.
     :param tile_service: The Nexus tile service instance.
+    :param sc: Spark context.
     :param tllr: The requested top left, lower right boundaries as (maxLat, minLon, minLat, maxLon)
     :param ds: The Nexus shortname for the requested dataset
     :param dataTimeStart: An allowable minimum date
@@ -408,7 +423,8 @@ def create_map(tile_service, tllr, ds, dataTimeStart, dataTimeEnd, width=None, h
     nexus_tiles = fetch_nexus_tiles(tile_service, min_lat, max_lat, min_lon, max_lon, ds, dataTimeStart, dataTimeEnd)
 
     if nexus_tiles is not None and len(nexus_tiles) > 0:
-        img = process_tiles_to_map(nexus_tiles, stats, tllr, width, height, force_min, force_max, table, interpolation, background)
+        img = process_tiles_to_map(nexus_tiles, sc, stats, tllr, width, height,
+                                   force_min, force_max, table, interpolation, background)
     else:
         img = create_no_data(width, height)
 

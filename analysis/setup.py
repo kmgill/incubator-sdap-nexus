@@ -16,7 +16,7 @@
 
 import setuptools
 
-__version__ = '1.6'
+__version__ = '1.5'
 
 setuptools.setup(
     name="nexusanalysis",
