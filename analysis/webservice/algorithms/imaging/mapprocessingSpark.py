@@ -19,6 +19,7 @@ NOTE: This code is an experimental proof-of-concept. The algorithms and methods 
 
 import numpy as np
 import math
+import logging
 
 import types
 from scipy.misc import imresize
@@ -45,31 +46,18 @@ def translate_interpolation(interp):
         return Image.NEAREST
 
 
-def get_first_valid_pair(coord_array):
-    """
-    Locates a contiguous pair of coordinates in a masked numpy array.
-    :param coord_array: A numpy array of numpy.float32 values
-    :return: a pair of values
-    :except: When no contiguous pair of coordinates are found.
-    """
-    for i in range(0, len(coord_array)-1):
-        if isinstance(coord_array[i], np.float32) and isinstance(coord_array[i+1], np.float32):
-            return coord_array[i], coord_array[i+1]
-
-    raise Exception("No valid coordinate pair found!")
-
-
 def get_xy_resolution(tile):
     """
     Computes the x/y (lon, lat) resolution of a tile
     :param tile: A tile
     :return: Resolution as (x_res, y_res)
     """
-    lon_0, lon_1 = get_first_valid_pair(tile.longitudes)
-    lat_0, lat_1 = get_first_valid_pair(tile.latitudes)
 
-    x_res = abs(lon_0 - lon_1)
-    y_res = abs(lat_0 - lat_1)
+    section_spec = {p.split(":")[0]:map(int, p.split(":")[1:3]) for p in tile.section_spec.split(",")}
+    num_lats = section_spec["lat"][1] - section_spec["lat"][0]
+    num_lons = section_spec["lon"][1] - section_spec["lon"][0]
+    y_res = (tile.bbox.max_lat - tile.bbox.min_lat) / float(num_lats - 1)
+    x_res = (tile.bbox.max_lon - tile.bbox.min_lon) / float(num_lons - 1)
 
     return x_res, y_res
 
@@ -127,7 +115,7 @@ def process_tile_async(args):
     return process_tile(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7])
 
 
-def process_tiles(tiles, tllr, data_min, data_max, table, canvas_height, canvas_width, background):
+def process_tiles(subset_tile_ids, tllr, data_min, data_max, table, canvas_height, canvas_width, background):
     """
     Loops through a list of tiles and calls process_tile on each
     :param tiles: A list of tiles
@@ -141,7 +129,11 @@ def process_tiles(tiles, tllr, data_min, data_max, table, canvas_height, canvas_
     :return: The results of each call to process_tile in a list
     """
 
+    tile_service = NexusTileService()
     results = []
+
+    tiles = tile_service.find_tiles_by_id(subset_tile_ids)
+
     for tile in tiles:
         result = process_tile(tile, tllr, data_min, data_max, table, canvas_height, canvas_width, background)
         results.append(result)
@@ -296,12 +288,14 @@ def process_tiles_to_map(nexus_tiles, sc, stats, reqd_tllr, width=None, height=N
     data = np.zeros((canvas_height, canvas_width, 4))
     data[:, :, :] = background
 
-    try:
-        spark_nparts_needed = determine_parllelism(len(nexus_tiles))
+    tile_ids = [tile.tile_id for tile in nexus_tiles]
 
-        nexus_tiles_spark = [(tiles, tiles_tllr, data_min, data_max, table, canvas_height, canvas_width, background)
-                             for tiles
-                             in np.array_split(np.array(nexus_tiles),
+    try:
+        spark_nparts_needed = determine_parllelism(len(tile_ids))
+
+        nexus_tiles_spark = [(subset_tile_ids, tiles_tllr, data_min, data_max, table, canvas_height, canvas_width, background)
+                             for subset_tile_ids
+                             in np.array_split(np.array(tile_ids),
                                                spark_nparts_needed)]
 
         rdd = sc.parallelize(nexus_tiles_spark, spark_nparts_needed)
@@ -384,7 +378,7 @@ def fetch_nexus_tiles(tile_service, min_lat, max_lat, min_lon, max_lon, ds, data
 
     daysinrange = tile_service.find_days_in_range_asc(min_lat, max_lat, min_lon, max_lon, ds, dataTimeStart, dataTimeEnd)
     if len(daysinrange) > 0:
-        ds1_nexus_tiles = tile_service.find_all_tiles_in_box_at_time(min_lat, max_lat, min_lon, max_lon, ds, daysinrange[0])
+        ds1_nexus_tiles = tile_service.find_all_tiles_in_box_at_time(min_lat, max_lat, min_lon, max_lon, ds, daysinrange[0], fetch_data=False)
         return ds1_nexus_tiles
     else:
         None
@@ -427,5 +421,4 @@ def create_map(tile_service, sc, tllr, ds, dataTimeStart, dataTimeEnd, width=Non
                                    force_min, force_max, table, interpolation, background)
     else:
         img = create_no_data(width, height)
-
     return img

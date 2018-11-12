@@ -44,30 +44,18 @@ def translate_interpolation(interp):
         return Image.NEAREST
 
 
-def get_first_valid_pair(coord_array):
-    """
-    Locates a contiguous pair of coordinates in a masked numpy array.
-    :param coord_array: A numpy array of numpy.float32 values
-    :return: a pair of values
-    :except: When no contiguous pair of coordinates are found.
-    """
-    for i in range(0, len(coord_array)-1):
-        if isinstance(coord_array[i], np.float32) and isinstance(coord_array[i+1], np.float32):
-            return coord_array[i], coord_array[i+1]
-
-    raise Exception("No valid coordinate pair found!")
-
 def get_xy_resolution(tile):
     """
     Computes the x/y (lon, lat) resolution of a tile
     :param tile: A tile
     :return: Resolution as (x_res, y_res)
     """
-    lon_0, lon_1 = get_first_valid_pair(tile.longitudes)
-    lat_0, lat_1 = get_first_valid_pair(tile.latitudes)
 
-    x_res = abs(lon_0 - lon_1)
-    y_res = abs(lat_0 - lat_1)
+    section_spec = {p.split(":")[0]:map(int, p.split(":")[1:3]) for p in tile.section_spec.split(",")}
+    num_lats = section_spec["lat"][1] - section_spec["lat"][0]
+    num_lons = section_spec["lon"][1] - section_spec["lon"][0]
+    y_res = (tile.bbox.max_lat - tile.bbox.min_lat) / float(num_lats - 1)
+    x_res = (tile.bbox.max_lon - tile.bbox.min_lon) / float(num_lons - 1)
 
     return x_res, y_res
 
